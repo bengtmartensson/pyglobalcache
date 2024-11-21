@@ -33,6 +33,7 @@ DEFAULT_TIMEOUT = 5
 
 COMPLETEIR = 'completeir'
 GETVERSION='getversion'
+GETSERIAL='get_SERIAL'
 SENDIR = 'sendir'
 SETSTATE = 'setstate'
 
@@ -81,9 +82,12 @@ class GlobalCache(object):
         answer = answ.decode('US-ASCII').rstrip()
         logger.info('Response: "' + answer + '"')
         return answer
+    
+    def _connector(self, module, port):
+        return str(module) + ':' + str(port)
         
     def _ir_string(self, module, port, command, count):
-        return SENDIR + ',' + str(module) + ':' + str(port) + ',' + str(self._sequence_no) + ',' + str(command._frequency) + ',' + str(count) + command._datastring
+        return SENDIR + ',' + self._connector(module, port) + ',' + str(self._sequence_no) + ',' + str(command._frequency) + ',' + str(count) + command._datastring
 
     def setrelay(self, module, port, onoff):
         cmdstring = self._relay_string(module, port, onoff)
@@ -91,7 +95,11 @@ class GlobalCache(object):
         return answer == cmdstring[3:]
 
     def _relay_string(self, module, port, onoff):
-        return SETSTATE + ',' + str(module) + ':' + str(port) + ',' + ('1' if onoff else '0')
+        return SETSTATE + ',' + self._connector(module, port) + ',' + ('1' if onoff else '0')
+    
+    def getserial(self, module=1, port=1):
+        cmdstring = GETSERIAL + ',' + self._connector(module, port)
+        return self._sendstring(cmdstring)
 
     def version(self):
         # todo
@@ -183,21 +191,7 @@ def parse_commandline():
         help='IP address or name of GlobalCache',
         dest='ip', type=str, default=DEFAULT_GLOBALCACHE_IP
     )
-    parser.add_argument(
-        '-c', '--command',
-        help='Named command to send from file in filename',
-        dest='commandname', type=str, default=None
-    )
-    parser.add_argument(
-        "-f", "--file",
-        help='File containing command definitions',
-        dest='filename', type=str, default=None
-    )
-    parser.add_argument(
-        '--count',
-        help='Number of times to send command',
-        dest='count', type=int, default=1
-    )
+
     parser.add_argument(
         '--tcpport',
         help='TCP port of GlobalCache, default ' + str(DEFAULT_GLOBALCACHE_CONTROLPORT),
@@ -215,7 +209,7 @@ def parse_commandline():
         '-t', '--timeout',
         help='Timeout in seconds',
         # metavar='s',
-        dest='timeout', type=int, default=DEFAULT_TIMEOUT)
+        dest='timeout', type=float, default=DEFAULT_TIMEOUT)
     parser.add_argument(
         '-V', '--version',
         help='Display version information for this program',
@@ -224,15 +218,64 @@ def parse_commandline():
         '-v', '--verbose',
         help='Have the communication with the GlobalCache echoed',
         dest='verbose', action='store_true')
-    parser.add_argument(
+ 
+    subparsers = \
+        parser.add_subparsers(dest='subcommand', metavar='command')
+
+    parser_sendir = subparsers.add_parser(
+        'sendir',
+        help='Send an IR signal.'
+        )
+    parser_sendir.add_argument(
+        '-c', '--command',
+        help='Named command to send from file in filename',
+        dest='commandname', type=str, default=None
+    )
+    parser_sendir.add_argument(
+        "-f", "--file",
+        help='File containing command definitions',
+        dest='filename', type=str, default=None
+    )
+    parser_sendir.add_argument(
+        '--count',
+        help='Number of times to send command',
+        dest='count', type=int, default=1
+    )
+    parser_sendir.add_argument(
         'pronto_hex_numbers',
         help='Numbers making up a pronto hex ir signal',
         nargs='*'
     )
-   
+    parser_serial = subparsers.add_parser(
+        'serial',
+        help='Send a string to a serial port, get the response.'
+        )
+    parser_serial.add_argument(
+        'message',
+        help='String to send to the serial port',
+        nargs='*', type=str
+        )
+    parser_relay = subparsers.add_parser(
+        'relay',
+        help='Set or clear a relay.'
+        )
+    parser_relay.add_argument('onoff',
+            help='Value to set the relay to',
+            nargs=1, type=str, default='pulse')
+    parser_version = subparsers.add_parser(
+        'version',
+        help='Inquire version of the Lirc server. '
+        + ' (Use "--version" for the version of this program.)'
+        )
+    parser_getserial = subparsers.add_parser(
+        'getserial',
+        help='Inquire current serial parameters. '
+        )
+
     return parser.parse_args()
 
 def main():
+    logging.basicConfig(level=logging.INFO)
     args = parse_commandline()
 
     if (args.version):
@@ -240,22 +283,48 @@ def main():
         sys.exit(0)
 
     status = False
-    globalcache = GlobalCache(args.ip, args.tcpport, args.timeout)
-    if (args.filename != None and args.commandname != None):
-        device = globalcache.IRDevice(args.module, args.port, args.filename)
-        try:
-            status = device.send(args.commandname, args.count)
-        except KeyError:
-            print('Command "' + args.commandname + '" unknown.')
+    try:
+        globalcache = GlobalCache(args.ip, args.tcpport, args.timeout)
+    except IOError:
+        print('Could not open GlobalCache')
+        sys.exit(2)
+
+    if (args.subcommand == 'version'):
+        print(globalcache.getversion())
+        status = True
+    elif args.subcommand == 'sendir':
+        status = False
+        if (args.filename != None and args.commandname != None):
+            device = GCIRDevice(globalcache, args.module, args.port, args.filename)
+            try:
+                status = device.send(args.commandname, args.count)
+            except KeyError:
+                print('Command "' + args.commandname + '" unknown.')
+        else:
+            pronto_hex = " ".join(args.pronto_hex_numbers)
+            cmd = GCIRDevice.Command(pronto_hex)
+            status = globalcache.sendir(args.module, args.port, cmd, args.count)
+    elif args.subcommand == 'relay':
+        device = GCRelayDevice(globalcache, args.module, args.port)
+        if args.onoff in ['on', '1', 'set']:
+            status = device.turn_on()
+        elif args.onoff in ['off', '0', 'clear']:
+            status = device.turn_off()
+        else:
+            status = device.pulse()
+    elif args.subcommand == 'getserial':
+        answer = globalcache.getserial(args.module, args.port)
+        print(answer)
+        success = answer != None
+    elif args.subcommand == 'serial':
+        print('Not implemented yet')
     else:
-        pronto_hex = " ".join(args.pronto_hex_numbers)
-        cmd = GCIRDevice.Command(pronto_hex)
-        status = globalcache.sendir(args.module, args.port, cmd, args.count)
+        print('Unknown or missing subcommand, use --help for syntax.')
 
-    #else:
-    #    print('Unknown or missing subcommand, use --help for syntax.')
+    if (not status):
+        print('Failure')
 
-    print("Success" if status else "Failure")
+    #print("Success" if status else "Failure")
     sys.exit(0 if status else 1)
 
 if __name__ == "__main__":
