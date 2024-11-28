@@ -19,6 +19,8 @@
 Control a GlobalCache device. Supports IR and relay devices.
 """
 
+# TODO: support serial port
+
 import argparse
 import logging
 import socket

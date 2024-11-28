@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import logging
 import pyglobalcache
 
@@ -8,7 +10,6 @@ try:
     tv = gc.IRDevice(2, 1, 'sonytv.txt')
     status = tv.send("ok", 3)
     print(status)
-    status = tv.send("ok", 3)
     print(status)
     answ = gc.getserial(3,1)
     print(answ)
