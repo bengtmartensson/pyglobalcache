@@ -34,10 +34,11 @@ DEFAULT_GLOBALCACHE_CONTROLPORT = 4998 # No way to change in GlobalCache product
 DEFAULT_TIMEOUT = 5
 
 COMPLETEIR = 'completeir'
-GETVERSION='getversion'
-GETSERIAL='get_SERIAL'
-SENDIR = 'sendir'
-SETSTATE = 'setstate'
+GETVERSION = 'getversion'
+GETSERIAL  = 'get_SERIAL'
+SENDIR     = 'sendir'
+SETSTATE   = 'setstate'
+GETSTATE   = 'getstate'
 
 logger = logging.getLogger(__name__)
 
@@ -92,12 +93,21 @@ class GlobalCache(object):
         return SENDIR + ',' + self._connector(module, port) + ',' + str(self._sequence_no) + ',' + str(command._frequency) + ',' + str(count) + command._datastring
 
     def setrelay(self, module, port, onoff):
-        cmdstring = self._relay_string(module, port, onoff)
+        cmdstring = self._relay_set_string(module, port, onoff)
         answer = self._sendstring(cmdstring)
         return answer == cmdstring[3:]
 
-    def _relay_string(self, module, port, onoff):
+    def getrelay(self, module, port):
+        cmdstring = self._relay_get_string(module, port)
+        answer = self._sendstring(cmdstring)
+        value = answer[10:11]
+        return value == '1'
+
+    def _relay_set_string(self, module, port, onoff):
         return SETSTATE + ',' + self._connector(module, port) + ',' + ('1' if onoff else '0')
+
+    def _relay_get_string(self, module, port):
+        return GETSTATE + ',' + self._connector(module, port)
     
     def getserial(self, module=1, port=1):
         cmdstring = GETSERIAL + ',' + self._connector(module, port)
@@ -170,12 +180,21 @@ class GCRelayDevice(object):
         self._port = port
         self._pulselength = pulselength
     
+    def setstate(self, onoff):
+        return self._globalCache.setrelay(self._module, self._port, onoff)
+
     def turn_on(self):
-        return self._globalCache.setrelay(self._module, self._port, True)
-    
+        return self.setstate(True)
+
     def turn_off(self):
-        return self._globalCache.setrelay(self._module, self._port, False)
+        return self.setstate(False)
+
+    def toggle(self):
+        return self.setstate(not self.getstate())
     
+    def getstate(self):
+        return self._globalCache.getrelay(self._module, self._port)
+
     def pulse(self):
         status = self.turn_on()
         if not status:

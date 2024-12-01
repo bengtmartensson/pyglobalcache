@@ -10,7 +10,6 @@ try:
     tv = gc.IRDevice(2, 1, 'sonytv.txt')
     status = tv.send("ok", 3)
     print(status)
-    print(status)
     answ = gc.getserial(3,1)
     print(answ)
 except Exception:
@@ -19,6 +18,11 @@ except Exception:
 gc2 = pyglobalcache.GlobalCache('gc2')
 answ = gc2.getserial(2, 1)
 print(answ)
+
 door = gc2.RelayDevice()
 status = door.pulse()
 print(status)
+relay = gc2.RelayDevice(3, 2)
+print(relay.getstate())
+print(relay.toggle())
+print(relay.getstate())
