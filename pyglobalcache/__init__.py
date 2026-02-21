@@ -26,80 +26,91 @@ import logging
 import socket
 import sys
 import time
+import typing
 
 VERSION = "0.0.1"
 
 DEFAULT_GLOBALCACHE_IP = '192.168.1.70'
 DEFAULT_GLOBALCACHE_CONTROLPORT = 4998 # No way to change in GlobalCache products
 DEFAULT_TIMEOUT = 5
+DEFAULT_SERIAL_SETTINGS = '9600,FLOW_NONE,PARITY_NO'
 
 COMPLETEIR = 'completeir'
 GETVERSION = 'getversion'
 GETSERIAL  = 'get_SERIAL'
 SENDIR     = 'sendir'
+SETSERIAL  = 'set_SERIAL'
 SETSTATE   = 'setstate'
 GETSTATE   = 'getstate'
 
 logger = logging.getLogger(__name__)
 
 class GlobalCache(object):
+
     def __init__(self, ip_address=DEFAULT_GLOBALCACHE_IP, portnr=DEFAULT_GLOBALCACHE_CONTROLPORT, timeout=DEFAULT_TIMEOUT):
         self._ip = ip_address
         self._portnr = portnr
         self._sequence_no = 1
-        self._socket = None
         self._timeout = timeout
-        self._version = self._sendstring(GETVERSION)
+        self._version = self._sendstring(GETVERSION, 1)[0]
+
+    def _send_read_socket(self, portnr: int, command: str, no_lines: str=1) -> typing.List[str]:
+        logger.info('Sending "' + command + '" to ' + str(self._ip) + ':' + str(portnr))
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(self._timeout)
+        sock.connect((self._ip, portnr))
+        sock.send(bytearray(command + '\r', 'US-ASCII'))
+        answer = []
+        for i in range(no_lines):
+            a = sock.recv(4096)
+            answer.append(a.decode('US-ASCII').rstrip())
+        sock.close()
+        logger.info('Response: "' + answer[0] + '"')
+        return answer
 
     def IRDevice(self, module, port, commands):
         return GCIRDevice(self, module, port, commands)
     
     def RelayDevice(self, module=3, port=1):
         return GCRelayDevice(self, module, port)
+
+    def SerialDevice(self, module=1, port=1):
+        return GCSerialDevice(self, module, port)
         
-    def ready(self, timeout):
+    def ready(self, timeout) -> bool:
         return self._version != None
     
-    def getversion(self):
+    def getversion(self) -> str:
         return self._version
 
-    def sendir(self, module, port, command, count):
+    def sendir(self, module, port, command, count) -> bool:
         cmdstring = self._ir_string(module, port, command, count)
         return self._sendir(cmdstring)
 
-    def _sendir(self, commandstring):
+    def _sendir(self, commandstring) -> bool:
         self._sequence_no = self._sequence_no + 1
-        answ = self._sendstring(commandstring)
+        answ = self._sendstring(commandstring)[0]
         list = commandstring.split(',')
         expected = COMPLETEIR + ',' + list[1] + ',' + list[2]
         return expected == answ
 
-    def _sendstring(self, command):
-        logger.info('Sending "' + command + '" to ' + str(self._ip) + '...')
-        self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._socket.settimeout(self._timeout)
-        self._socket.connect((self._ip, self._portnr))
-        self._socket.send(bytearray(command + '\r', 'US-ASCII'))
-        answ = self._socket.recv(4096)
-        self._socket.close()
-        answer = answ.decode('US-ASCII').rstrip()
-        logger.info('Response: "' + answer + '"')
-        return answer
+    def _sendstring(self, command, no_lines=1) -> typing.List[str]:
+        return self._send_read_socket(self._portnr, command, no_lines)
     
-    def _connector(self, module, port):
+    def _connector(self, module, port) -> str:
         return str(module) + ':' + str(port)
         
-    def _ir_string(self, module, port, command, count):
+    def _ir_string(self, module: int, port: int, command: str, count: int) -> str:
         return SENDIR + ',' + self._connector(module, port) + ',' + str(self._sequence_no) + ',' + str(command._frequency) + ',' + str(count) + command._datastring
 
-    def setrelay(self, module, port, onoff):
+    def setrelay(self, module: int, port: int, onoff: bool) -> bool:
         cmdstring = self._relay_set_string(module, port, onoff)
         answer = self._sendstring(cmdstring)
-        return answer == cmdstring[3:]
+        return answer[0] == cmdstring[3:]
 
-    def getrelay(self, module, port):
+    def getrelay(self, module, port) -> bool:
         cmdstring = self._relay_get_string(module, port)
-        answer = self._sendstring(cmdstring)
+        answer = self._sendstring(cmdstring)[0]
         value = answer[10:11]
         return value == '1'
 
@@ -109,13 +120,32 @@ class GlobalCache(object):
     def _relay_get_string(self, module, port):
         return GETSTATE + ',' + self._connector(module, port)
     
-    def getserial(self, module=1, port=1):
+    def getserial(self, module=1, port=1) -> str:
         cmdstring = GETSERIAL + ',' + self._connector(module, port)
-        return self._sendstring(cmdstring)
+        return self._sendstring(cmdstring)[0]
+
+    # settings is a string of the form
+    # <baudrate>,<flowcontrol/duplex>,<parity>[,stopbits][,cable_id]
+    def setserial(self, module=1, port=1, settings=DEFAULT_SERIAL_SETTINGS) -> str:
+        cmdstring = SETSERIAL + ',' + self._connector(module, port) + ',' + settings
+        return self._sendstring(cmdstring)[0]
 
     def version(self):
         # todo
         return None
+
+class GCSerialDevice(object):
+    def __init__(self, globalCache, module=1, port=1, timeout=DEFAULT_TIMEOUT):
+        self._globalCache = globalCache
+        self._module = module
+        self._port = port
+        self._socketno = globalCache._portnr + module
+
+    def set(self, parameters=DEFAULT_SERIAL_SETTINGS) -> str:
+        return self._globalCache.setserial(self._module, self._port, parameters)
+
+    def send(self, payload, no_lines=1) -> typing.List[str]:
+        return self._globalCache._send_read_socket(self._socketno, payload, no_lines)
 
 class GCIRDevice(object):         
     def __init__(self, globalCache, module, port, commands):
@@ -127,7 +157,7 @@ class GCIRDevice(object):
     #def _gc_string(self, command, count):
     #    return self._globalCache._ir_string(self._module, self._port, command, count)
     
-    def send(self, command_name, count):
+    def send(self, command_name, count) -> bool:
         command = self._commands[command_name]
         return self._globalCache.sendir(self._module, self._port, command, count)
 
@@ -180,22 +210,22 @@ class GCRelayDevice(object):
         self._port = port
         self._pulselength = pulselength
     
-    def setstate(self, onoff):
+    def setstate(self, onoff) -> bool:
         return self._globalCache.setrelay(self._module, self._port, onoff)
 
-    def turn_on(self):
+    def turn_on(self) -> bool:
         return self.setstate(True)
 
-    def turn_off(self):
+    def turn_off(self) -> bool:
         return self.setstate(False)
 
-    def toggle(self):
+    def toggle(self) -> bool:
         return self.setstate(not self.getstate())
     
-    def getstate(self):
+    def getstate(self) -> bool:
         return self._globalCache.getrelay(self._module, self._port)
 
-    def pulse(self):
+    def pulse(self) -> bool:
         status = self.turn_on()
         if not status:
             return False
