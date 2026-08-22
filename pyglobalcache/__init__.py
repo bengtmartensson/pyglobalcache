@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 
-# Copyright (C) 2024 Bengt Martensson.
+# Copyright (C) 2024, 2026 Bengt Martensson.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,10 +16,8 @@
 # this program. If not, see http://www.gnu.org/licenses/.
 
 """
-Control a GlobalCache device. Supports IR and relay devices.
+Control a GlobalCache device, all models (probably). Supports IR, serial and relay devices.
 """
-
-# TODO: support serial port
 
 import argparse
 import logging
@@ -27,8 +25,9 @@ import socket
 import sys
 import time
 import typing
+import threading
 
-VERSION = "0.0.1"
+VERSION = "0.0.2"
 
 DEFAULT_GLOBALCACHE_IP = '192.168.1.70'
 DEFAULT_GLOBALCACHE_CONTROLPORT = 4998 # No way to change in GlobalCache products
@@ -47,25 +46,36 @@ logger = logging.getLogger(__name__)
 
 class GlobalCache(object):
 
+    locks = {}
+    def _get_lock(ip):
+        lock = GlobalCache.locks.get(ip)
+        if lock is not None:
+            return lock
+
+        GlobalCache.locks[ip] = threading.Lock()
+        return GlobalCache.locks[ip]
+
     def __init__(self, ip_address=DEFAULT_GLOBALCACHE_IP, portnr=DEFAULT_GLOBALCACHE_CONTROLPORT, timeout=DEFAULT_TIMEOUT):
-        self._ip = ip_address
+        self._ip = socket.gethostbyname(ip_address)
         self._portnr = portnr
         self._sequence_no = 1
         self._timeout = timeout
+        self._lock = GlobalCache._get_lock(self._ip)
         self._version = self._sendstring(GETVERSION, 1)[0]
 
     def _send_read_socket(self, portnr: int, command: str, no_lines: str=1) -> typing.List[str]:
-        logger.info('Sending "' + command + '" to ' + str(self._ip) + ':' + str(portnr))
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(self._timeout)
-        sock.connect((self._ip, portnr))
-        sock.send(bytearray(command + '\r', 'US-ASCII'))
-        answer = []
-        for i in range(no_lines):
-            a = sock.recv(4096)
-            answer.append(a.decode('US-ASCII').rstrip())
-        sock.close()
-        logger.info('Response: "' + answer[0] + '"')
+        with self._lock:
+            logger.info('Sending "' + command + '" to ' + self._ip + ':' + str(portnr))
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(self._timeout)
+            sock.connect((self._ip, portnr))
+            sock.send(bytearray(command + '\r', 'US-ASCII'))
+            answer = []
+            for i in range(no_lines):
+                a = sock.recv(4096)
+                answer.append(a.decode('US-ASCII').rstrip())
+            sock.close()
+            logger.info('Response: "' + answer[0] + '"')
         return answer
 
     def IRDevice(self, module, port, commands):
