@@ -16,7 +16,7 @@
 # this program. If not, see http://www.gnu.org/licenses/.
 
 """
-Control a GlobalCache device, all models (probably). Supports IR, serial and relay devices.
+Control a GlobalCache device through its TCP API, all models (probably). Supports IR, serial and relay devices.
 """
 
 import argparse
@@ -27,7 +27,7 @@ import time
 import typing
 import threading
 
-VERSION = "0.0.2"
+VERSION = "0.0.3"
 
 DEFAULT_GLOBALCACHE_IP = '192.168.1.70'
 DEFAULT_GLOBALCACHE_CONTROLPORT = 4998 # No way to change in GlobalCache products
@@ -55,7 +55,7 @@ class GlobalCache(object):
         GlobalCache.locks[ip] = threading.Lock()
         return GlobalCache.locks[ip]
 
-    def __init__(self, ip_address=DEFAULT_GLOBALCACHE_IP, portnr=DEFAULT_GLOBALCACHE_CONTROLPORT, timeout=DEFAULT_TIMEOUT):
+    def __init__(self, ip_address: str = DEFAULT_GLOBALCACHE_IP, portnr: int = DEFAULT_GLOBALCACHE_CONTROLPORT, timeout: int = DEFAULT_TIMEOUT) -> None:
         self._ip = socket.gethostbyname(ip_address)
         self._portnr = portnr
         self._sequence_no = 1
@@ -78,37 +78,40 @@ class GlobalCache(object):
             logger.info('Response: "' + answer[0] + '"')
         return answer
 
-    def IRDevice(self, module, port, commands):
+    def IRDevice(self, module: int, port: int = 1, commands: typing.Dict[str, str] = {}) -> GCIRDevice:
         return GCIRDevice(self, module, port, commands)
     
-    def RelayDevice(self, module=3, port=1):
+    def RelayDevice(self, module: int=3, port: int=1) -> GCRelayDevice:
         return GCRelayDevice(self, module, port)
 
-    def SerialDevice(self, module=1, port=1):
+    def SerialDevice(self, module: int=1, port: int=1) -> GCSerialDevice:
         return GCSerialDevice(self, module, port)
         
-    def ready(self, timeout) -> bool:
+    def ready(self, timeout: int) -> bool:
         return self._version != None
     
     def getversion(self) -> str:
         return self._version
 
-    def sendir(self, module, port, command, count) -> bool:
+    def sendir(self, module: int, port: int, command, count: int) -> bool:
         cmdstring = self._ir_string(module, port, command, count)
         return self._sendir(cmdstring)
 
-    def _sendir(self, commandstring) -> bool:
+    def _sendir(self, commandstring: str) -> bool:
         self._sequence_no = self._sequence_no + 1
         answ = self._sendstring(commandstring)[0]
         list = commandstring.split(',')
         expected = COMPLETEIR + ',' + list[1] + ',' + list[2]
         return expected == answ
 
-    def _sendstring(self, command, no_lines=1) -> typing.List[str]:
+    def _sendstring(self, command: str, no_lines: int=1) -> typing.List[str]:
         return self._send_read_socket(self._portnr, command, no_lines)
     
-    def _connector(self, module, port) -> str:
+    def _connector(self, module: int, port: int) -> str:
         return str(module) + ':' + str(port)
+
+    def _moduleversion(self, module: int) -> str:
+        return GETVERSION + "," + str(module)
         
     def _ir_string(self, module: int, port: int, command: str, count: int) -> str:
         return SENDIR + ',' + self._connector(module, port) + ',' + str(self._sequence_no) + ',' + str(command._frequency) + ',' + str(count) + command._datastring
@@ -118,31 +121,34 @@ class GlobalCache(object):
         answer = self._sendstring(cmdstring)
         return answer[0] == cmdstring[3:]
 
-    def getrelay(self, module, port) -> bool:
+    def getrelay(self, module: int, port: int) -> bool:
         cmdstring = self._relay_get_string(module, port)
         answer = self._sendstring(cmdstring)[0]
         value = answer[10:11]
         return value == '1'
 
-    def _relay_set_string(self, module, port, onoff):
+    def _relay_set_string(self, module: int, port: int, onoff: bool) -> str:
         return SETSTATE + ',' + self._connector(module, port) + ',' + ('1' if onoff else '0')
 
-    def _relay_get_string(self, module, port):
+    def _relay_get_string(self, module: int, port: int) -> str:
         return GETSTATE + ',' + self._connector(module, port)
     
-    def getserial(self, module=1, port=1) -> str:
+    def getserial(self, module: int=1, port: int=1) -> str:
         cmdstring = GETSERIAL + ',' + self._connector(module, port)
         return self._sendstring(cmdstring)[0]
 
     # settings is a string of the form
     # <baudrate>,<flowcontrol/duplex>,<parity>[,stopbits][,cable_id]
-    def setserial(self, module=1, port=1, settings=DEFAULT_SERIAL_SETTINGS) -> str:
+    def setserial(self, module: int=1, port: int=1, settings: str=DEFAULT_SERIAL_SETTINGS) -> str:
         cmdstring = SETSERIAL + ',' + self._connector(module, port) + ',' + settings
         return self._sendstring(cmdstring)[0]
 
-    def version(self):
-        # todo
-        return None
+    def version(self) -> str:
+        return self._version
+
+    def getmoduleversion(self, module: int) -> str:
+        cmd = self._moduleversion(module)
+        return self._sendstring(cmd)
 
 class GCSerialDevice(object):
     def __init__(self, globalCache, module=1, port=1, timeout=DEFAULT_TIMEOUT):
@@ -157,6 +163,9 @@ class GCSerialDevice(object):
     def send(self, payload, no_lines=1) -> typing.List[str]:
         return self._globalCache._send_read_socket(self._socketno, payload, no_lines)
 
+    def getversion(self) -> str:
+        return self._globalCache.getmoduleversion(self._module)
+
 class GCIRDevice(object):         
     def __init__(self, globalCache, module, port, commands):
         self._commands = commands if isinstance(commands, dict) else self.parse_commands_file(commands)
@@ -167,11 +176,14 @@ class GCIRDevice(object):
     #def _gc_string(self, command, count):
     #    return self._globalCache._ir_string(self._module, self._port, command, count)
     
-    def send(self, command_name, count) -> bool:
+    def send(self, command_name: str, count: int = 1) -> bool:
         command = self._commands[command_name]
         return self._globalCache.sendir(self._module, self._port, command, count)
 
-    def parse_commands_file(self, filename):
+    def getversion(self) -> str:
+        return self._globalCache.getmoduleversion(self._module)
+
+    def parse_commands_file(self, filename: str) -> typing.Dict[str, str]:
         commands = {}
         with open(filename,'r') as cmds:  
             name = None
@@ -188,7 +200,7 @@ class GCIRDevice(object):
         return commands
     
     class Command(object):
-        def __init__(self, prontohex):
+        def __init__(self, prontohex: str) -> None:
             list = prontohex.split()
             type = self._pronto_int(list)
             if type != 0:
@@ -201,7 +213,7 @@ class GCIRDevice(object):
             for duration in list:
                 self._datastring += ("," + str(int(duration, 16)))
 
-        def _pronto_int(self, list):
+        def _pronto_int(self, list: typing.List[str]) -> int:
             x = list.pop(0)
             return int(x, 16)
 
@@ -214,13 +226,13 @@ class GCIRDevice(object):
         pass
 
 class GCRelayDevice(object):
-    def __init__(self, globalCache, module=3, port=1, pulselength=1):
+    def __init__(self, globalCache: GlobalCache, module: int=3, port: int=1, pulselength: int=1) -> None:
         self._globalCache = globalCache
         self._module = module
         self._port = port
         self._pulselength = pulselength
     
-    def setstate(self, onoff) -> bool:
+    def setstate(self, onoff: bool) -> bool:
         return self._globalCache.setrelay(self._module, self._port, onoff)
 
     def turn_on(self) -> bool:
@@ -241,6 +253,9 @@ class GCRelayDevice(object):
             return False
         time.sleep(self._pulselength)
         return self.turn_off()
+
+    def getversion(self) -> str:
+        return self._globalCache.getmoduleversion(self._module)
 
 def parse_commandline():
     parser = argparse.ArgumentParser(
