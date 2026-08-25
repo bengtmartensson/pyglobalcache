@@ -17,6 +17,7 @@
 
 """
 Control a GlobalCache device through its TCP API, all models (probably). Supports IR, serial and relay devices.
+Contains a factory funtion: do not use the constructor for GlobalCache.
 """
 
 import argparse
@@ -27,7 +28,7 @@ import time
 import typing
 import threading
 
-VERSION = "0.0.3"
+VERSION = "0.0.4"
 
 DEFAULT_GLOBALCACHE_IP = '192.168.1.70'
 DEFAULT_GLOBALCACHE_CONTROLPORT = 4998 # No way to change in GlobalCache products
@@ -55,12 +56,23 @@ class GlobalCache(object):
         GlobalCache.locks[ip] = threading.Lock()
         return GlobalCache.locks[ip]
 
+    _globalcaches = {}
+
+    def globalcache(ip_address: str = DEFAULT_GLOBALCACHE_IP, portnr: int = DEFAULT_GLOBALCACHE_CONTROLPORT, timeout: int = DEFAULT_TIMEOUT) -> GlobalCache:
+        canon_ip = socket.gethostbyname(ip_address)
+        gc = GlobalCache._globalcaches.get(canon_ip)
+        if gc is None:
+            gc = GlobalCache(canon_ip, portnr, timeout)
+            GlobalCache._globalcaches[canon_ip] = gc
+        return gc
+
+    # "private", do not use
     def __init__(self, ip_address: str = DEFAULT_GLOBALCACHE_IP, portnr: int = DEFAULT_GLOBALCACHE_CONTROLPORT, timeout: int = DEFAULT_TIMEOUT) -> None:
-        self._ip = socket.gethostbyname(ip_address)
+        self._ip = ip_address # socket.gethostbyname(ip_address)
         self._portnr = portnr
         self._sequence_no = 1
         self._timeout = timeout
-        self._lock = GlobalCache._get_lock(self._ip)
+        self._lock = threading.Lock() # GlobalCache._get_lock(self._ip)
         self._version = self._sendstring(GETVERSION, 1)[0]
 
     def _send_read_socket(self, portnr: int, command: str, no_lines: str=1) -> typing.List[str]:

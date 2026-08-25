@@ -5,7 +5,7 @@ import pyglobalcache
 
 logging.basicConfig(level=logging.INFO)
 try:
-    gc = pyglobalcache.GlobalCache()
+    gc = pyglobalcache.GlobalCache.globalcache()
     print(gc.getversion())
     tv = gc.IRDevice(2, 1, 'sonytv.txt')
     ver = tv.getversion()
@@ -21,7 +21,7 @@ except Exception as ex:
     print('Some error occured')
     print(ex)
 
-gc2 = pyglobalcache.GlobalCache('gc2')
+gc2 = pyglobalcache.GlobalCache.globalcache('gc2')
 print(gc2.getversion())
 print(gc2.getmoduleversion(4))
 gc2ir = gc2.IRDevice(4)
@@ -57,7 +57,7 @@ try:
 except TimeoutError:
     print('*** Timeout ***')
 
-gcX = pyglobalcache.GlobalCache('192.168.1.72')
+gcX = pyglobalcache.GlobalCache.globalcache('192.168.1.72')
 print(gcX.getversion())
 
 door = gc2.RelayDevice()
