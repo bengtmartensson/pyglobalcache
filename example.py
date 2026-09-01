@@ -5,7 +5,7 @@ import pyglobalcache
 
 logging.basicConfig(level=logging.INFO)
 try:
-    gc = pyglobalcache.GlobalCache.globalcache()
+    gc = pyglobalcache.GlobalCache.globalcache('globalcache')
     print(gc.getversion())
     tv = gc.IRDevice(2, 1, 'sonytv.txt')
     ver = tv.getversion()
@@ -24,16 +24,18 @@ except Exception as ex:
 
 gc2 = pyglobalcache.GlobalCache.globalcache('gc2')
 print(gc2.getversion())
-pana = gc2.IRDevice(5, 1, 'panasonic.txt')
-status = pana.send('power_toggle')
-print(status)
-oppo = gc2.SerialDevice(2)
-print(pana.getversion())
+#pana = gc2.IRDevice(5, 1, 'panasonic.txt')
+#print(pana.getversion())
+#status = pana.send('power_toggle')
+#print(status)
+#print(pana.getversion())
 print(gc2.getmoduleversion(4))
 gc2ir = gc2.IRDevice(4)
 print(gc2ir.getversion())
-answ = gc2.getserial(1, 1)
-print(answ)
+
+oppo = gc2.SerialDevice(1)
+#answ = gc2.getserial(1)
+#print(answ)
 #answ = gc2.setserial(1, 1, '19200,FLOW_HARDWARE,PARITY_EVEN')
 #print(answ)
 #answ = gc2.getserial(1, 1)
@@ -41,9 +43,6 @@ print(answ)
 #answ = gc2.setserial()
 #print(answ)
 
-oppo = gc2.SerialDevice()
-answ = gc2.getserial()
-print(answ)
 #answ = oppo.set('9600,FLOW_NONE,PARITY_NONE')
 #print(answ)
 try:
@@ -54,7 +53,7 @@ except TimeoutError:
     print('*** Timeout ***')
 
 denon = gc2.SerialDevice(2)
-answ = gc2.getserial(2, 1)
+answ = gc2.getserial(2)
 print(answ)
 #answ = denon.set('9600,FLOW_NONE,PARITY_NONE')
 #print(answ)

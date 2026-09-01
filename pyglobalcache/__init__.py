@@ -28,7 +28,7 @@ import time
 import typing
 import threading
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 DEFAULT_GLOBALCACHE_IP = '192.168.1.70'
 DEFAULT_GLOBALCACHE_CONTROLPORT = 4998 # No way to change in GlobalCache products
@@ -58,6 +58,42 @@ class GlobalCache(object):
 
     _globalcaches = {}
 
+    class SmartSocket(object):
+        def __init__(self, ip: str, portnr: int, timeout: int, immediate_close: bool = True) -> None:
+            self._ip = ip
+            self._timeout = timeout
+            self._portnr = portnr
+            self._immediate_close = immediate_close
+            self._sock = None
+
+        def close(self) -> None:
+            self._sock.close()
+            self._sock = None
+
+        def _open(self):
+            self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._sock.settimeout(self._timeout)
+            self._sock.connect((self._ip, self._portnr))
+
+        def send_read(self, command: str, no_lines: str=1) -> typing.List[str]:
+            logger.info('Sending "' + command + '" to ' + self._ip + ':' + str(self._portnr))
+            if self._sock is None:
+                self._open()
+            try:
+                self._sock.send(bytearray(command + '\r', 'US-ASCII'))
+            except BrokenPipeError, AttributeError:
+                logger.info('BrokenPipeError')
+                self._open()
+                self._sock.send(bytearray(command + '\r', 'US-ASCII'))
+            answer = []
+            for i in range(no_lines):
+                a = self._sock.recv(4096)
+                answer.append(a.decode('US-ASCII').rstrip())
+            if self._immediate_close:
+                self.close()
+            logger.info('Response: "' + answer[0] + '"')
+            return answer
+
     def globalcache(ip_address: str = DEFAULT_GLOBALCACHE_IP, portnr: int = DEFAULT_GLOBALCACHE_CONTROLPORT, timeout: int = DEFAULT_TIMEOUT, immediate_close: bool = False) -> GlobalCache:
         canon_ip = socket.gethostbyname(ip_address)
         gc = GlobalCache._globalcaches.get(canon_ip)
@@ -66,41 +102,16 @@ class GlobalCache(object):
             GlobalCache._globalcaches[canon_ip] = gc
         return gc
 
-    # "private", do not use
+    # "private", do not use, use the factory instead
     def __init__(self, ip_address: str = DEFAULT_GLOBALCACHE_IP, portnr: int = DEFAULT_GLOBALCACHE_CONTROLPORT, timeout: int = DEFAULT_TIMEOUT, immediate_close: bool = True) -> None:
         self._ip = ip_address # socket.gethostbyname(ip_address)
         self._portnr = portnr
         self._sequence_no = 1
         self._timeout = timeout
         self._lock = threading.Lock() # GlobalCache._get_lock(self._ip)
-        self._immedite_close = immediate_close
-        self._sock = None
+        self._immediate_close = immediate_close
+        self._smartsock = GlobalCache.SmartSocket(self._ip, portnr, self._timeout, self._immediate_close)
         self._version = self._sendstring(GETVERSION, 1)[0]
-
-    def _setup_socket(self, portnr: int):
-        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._sock.settimeout(self._timeout)
-        self._sock.connect((self._ip, portnr))
-
-    def _send_read_socket(self, portnr: int, command: str, no_lines: str=1) -> typing.List[str]:
-        with self._lock:
-            logger.info('Sending "' + command + '" to ' + self._ip + ':' + str(portnr))
-            if self._sock is None:
-                self._setup_socket(portnr)
-            try:
-                self._sock.send(bytearray(command + '\r', 'US-ASCII'))
-            except BrokenPipeError, AttributeError:
-                logger.info('BrokenPipeError')
-                self._setup_socket(portnr)
-                self._sock.send(bytearray(command + '\r', 'US-ASCII'))
-            answer = []
-            for i in range(no_lines):
-                a = self._sock.recv(4096)
-                answer.append(a.decode('US-ASCII').rstrip())
-            if self._immedite_close:
-                self.close()
-            logger.info('Response: "' + answer[0] + '"')
-        return answer
 
     def IRDevice(self, module: int, port: int = 1, commands: typing.Dict[str, str] = {}) -> GCIRDevice:
         return GCIRDevice(self, module, port, commands)
@@ -108,16 +119,14 @@ class GlobalCache(object):
     def RelayDevice(self, module: int=3, port: int=1) -> GCRelayDevice:
         return GCRelayDevice(self, module, port)
 
-    def SerialDevice(self, module: int=1, port: int=1) -> GCSerialDevice:
-        return GCSerialDevice(self, module, port)
+    def SerialDevice(self, module: int=1, timeout: int = DEFAULT_TIMEOUT) -> GCSerialDevice:
+        return GCSerialDevice(self, module, timeout)
         
     def ready(self, timeout: int) -> bool:
         return self._version != None
 
     def close(self) -> None:
-        if not self._sock is None:
-            self._sock.close()
-            self._sock = None
+        self._smartsock.close()
     
     def getversion(self) -> str:
         return self._version
@@ -134,9 +143,11 @@ class GlobalCache(object):
         return expected == answ
 
     def _sendstring(self, command: str, no_lines: int=1) -> typing.List[str]:
-        return self._send_read_socket(self._portnr, command, no_lines)
+        with self._lock:
+            answ = self._smartsock.send_read(command, no_lines)
+        return answ
     
-    def _connector(self, module: int, port: int) -> str:
+    def _connector(self, module: int, port: int = 1) -> str:
         return str(module) + ':' + str(port)
 
     def _moduleversion(self, module: int) -> str:
@@ -162,14 +173,14 @@ class GlobalCache(object):
     def _relay_get_string(self, module: int, port: int) -> str:
         return GETSTATE + ',' + self._connector(module, port)
     
-    def getserial(self, module: int=1, port: int=1) -> str:
-        cmdstring = GETSERIAL + ',' + self._connector(module, port)
+    def getserial(self, module: int=1) -> str:
+        cmdstring = GETSERIAL + ',' + self._connector(module)
         return self._sendstring(cmdstring)[0]
 
     # settings is a string of the form
     # <baudrate>,<flowcontrol/duplex>,<parity>[,stopbits][,cable_id]
-    def setserial(self, module: int=1, port: int=1, settings: str=DEFAULT_SERIAL_SETTINGS) -> str:
-        cmdstring = SETSERIAL + ',' + self._connector(module, port) + ',' + settings
+    def setserial(self, module: int=1, settings: str=DEFAULT_SERIAL_SETTINGS) -> str:
+        cmdstring = SETSERIAL + ',' + self._connector(module) + ',' + settings
         return self._sendstring(cmdstring)[0]
 
     def version(self) -> str:
@@ -180,49 +191,24 @@ class GlobalCache(object):
         return self._sendstring(cmd)
 
 class GCSerialDevice(object):
-    def __init__(self, globalCache, module=1, port=1, timeout=DEFAULT_TIMEOUT):
+    def __init__(self, globalCache, module:int = 1, port:int = 1, timeout=DEFAULT_TIMEOUT):
         self._globalCache = globalCache
         self._module = module
         self._port = port
+        self._timeout = timeout
         self._socketno = globalCache._portnr + module
-        self._sock: socket.socket = None
+        self._smartsocket = GlobalCache.SmartSocket(self._globalCache._ip, self._socketno, timeout, self._globalCache._immediate_close)
 
-    def _setup_socket(self, portnr: int):
-        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._sock.settimeout(self._globalCache._timeout)
-        self._sock.connect((self._globalCache._ip, portnr))
-
-    def _send_read_socket(self, portnr: int, command: str, no_lines: str=1) -> typing.List[str]:
+    def send(self, command: str, no_lines: str=1) -> typing.List[str]:
         with self._globalCache._lock:
-            logger.info('Sending "' + command + '" to ' + self._globalCache._ip + ':' + str(portnr))
-            if self._sock is None:
-                self._setup_socket(portnr)
-
-            try:
-                self._sock.send(bytearray(command + '\r', 'US-ASCII'))
-            except BrokenPipeError, AttributeError:
-                logger.info('BrokenPipeError')
-                self._setup_socket(portnr)
-                self._sock.send(bytearray(command + '\r', 'US-ASCII'))
-            answer = []
-            for i in range(no_lines):
-                a = self._sock.recv(4096)
-                answer.append(a.decode('US-ASCII').rstrip())
-            if self._globalCache._immedite_close:
-                self.close()
-            logger.info('Response: "' + answer[0] + '"')
-        return answer
+            answ = self._smartsocket.send_read(command, no_lines)
+        return answ
 
     def set(self, parameters=DEFAULT_SERIAL_SETTINGS) -> str:
         return self._globalCache.setserial(self._module, self._port, parameters)
 
-    def send(self, payload, no_lines=1) -> typing.List[str]:
-        return self._send_read_socket(self._socketno, payload, no_lines)
-
     def close(self):
-        if not self._sock is None:
-            self._sock.close()
-            self._sock = None
+        self._smartsocket.close()
 
     def getversion(self) -> str:
         return self._globalCache.getmoduleversion(self._module)
@@ -233,9 +219,6 @@ class GCIRDevice(object):
         self._globalCache = globalCache
         self._module = module
         self._port = port
-
-    #def _gc_string(self, command, count):
-    #    return self._globalCache._ir_string(self._module, self._port, command, count)
     
     def send(self, command_name: str, count: int = 1) -> bool:
         command = self._commands[command_name]
@@ -283,7 +266,7 @@ class GCIRDevice(object):
         pass
 
     class CommandNotFoundException(Exception):
-        """"This exception is when a command is not found."""
+        """"This exception is thrown when a command is not found."""
         pass
 
 class GCRelayDevice(object):
@@ -401,7 +384,7 @@ def parse_commandline():
             nargs=1, type=str, default='pulse')
     parser_version = subparsers.add_parser(
         'version',
-        help='Inquire version of the Lirc server. '
+        help='Inquire version of the GlobalCache. '
         + ' (Use "--version" for the version of this program.)'
         )
     parser_getserial = subparsers.add_parser(
