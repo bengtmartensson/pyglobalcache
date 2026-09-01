@@ -14,15 +14,21 @@ try:
     print(status)
     status = tv.send("ok", 3)
     print(status)
+    gc.close()
 #    answ = gc.getserial()
 #    print(answ)
 
 except Exception as ex:
-    print('Some error occured')
+    print('Some error occured', ex)
     print(ex)
 
 gc2 = pyglobalcache.GlobalCache.globalcache('gc2')
 print(gc2.getversion())
+pana = gc2.IRDevice(5, 1, 'panasonic.txt')
+status = pana.send('power_toggle')
+print(status)
+oppo = gc2.SerialDevice(2)
+print(pana.getversion())
 print(gc2.getmoduleversion(4))
 gc2ir = gc2.IRDevice(4)
 print(gc2ir.getversion())
@@ -38,27 +44,30 @@ print(answ)
 oppo = gc2.SerialDevice()
 answ = gc2.getserial()
 print(answ)
-answ = oppo.set('9600,FLOW_NONE,PARITY_NONE')
-print(answ)
+#answ = oppo.set('9600,FLOW_NONE,PARITY_NONE')
+#print(answ)
 try:
     answ = oppo.send('EJT', 1)[0]
     print(answ)
+    oppo.close()
 except TimeoutError:
     print('*** Timeout ***')
 
 denon = gc2.SerialDevice(2)
 answ = gc2.getserial(2, 1)
 print(answ)
-answ = denon.set('9600,FLOW_NONE,PARITY_NONE')
-print(answ)
+#answ = denon.set('9600,FLOW_NONE,PARITY_NONE')
+#print(answ)
 try:
     answ = denon.send('MV?', 1)[0]
     print(answ)
+    denon.close()
 except TimeoutError:
     print('*** Timeout ***')
 
 gcX = pyglobalcache.GlobalCache.globalcache('192.168.1.72')
 print(gcX.getversion())
+#gcX.close()
 
 door = gc2.RelayDevice()
 status = door.pulse()
@@ -67,3 +76,4 @@ relay = gc2.RelayDevice(3, 2)
 print(relay.getstate())
 print(relay.toggle())
 print(relay.getstate())
+gc2.close()
