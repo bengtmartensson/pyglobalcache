@@ -2,22 +2,9 @@
 
 # Copyright (C) 2024, 2026 Bengt Martensson.
 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or (at
-# your option) any later version.
-#
-# This program is distributed in the hope that it will be useful, but
-# WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-# General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License along with
-# this program. If not, see http://www.gnu.org/licenses/.
-
 """
 Control a GlobalCache device through its TCP API, all models (probably). Supports IR, serial and relay devices.
-Contains a factory funtion: do not use the constructor for GlobalCache.
+Contains a factory function: do not use the constructor.
 """
 
 import argparse
@@ -304,14 +291,19 @@ class GCRelayDevice(object):
 def parse_commandline():
     parser = argparse.ArgumentParser(
         prog='globalcache',
-        description="Program to send IR codes and relay commands to a GlobalCache."
+        description="Program to send IR codes, serial commands and relay commands to a GlobalCache."
     )
     parser.add_argument(
         '-i', '--ip', '-a', '--address',
         help='IP address or name of GlobalCache',
         dest='ip', type=str, default=DEFAULT_GLOBALCACHE_IP
     )
-
+    parser.add_argument(
+        '-l', '--loglevel',
+        help='Log level',
+        dest='loglevel',
+        default='WARNING', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+    )
     parser.add_argument(
         '--tcpport',
         help='TCP port of GlobalCache, default ' + str(DEFAULT_GLOBALCACHE_CONTROLPORT),
@@ -331,6 +323,10 @@ def parse_commandline():
         # metavar='s',
         dest='timeout', type=float, default=DEFAULT_TIMEOUT)
     parser.add_argument(
+        '-I', '--immediate_close',
+        dest='immediate_close', action='store_true'
+    )
+    parser.add_argument(
         '-V', '--version',
         help='Display version information for this program',
         dest='version', action='store_true')
@@ -345,7 +341,7 @@ def parse_commandline():
     parser_sendir = subparsers.add_parser(
         'sendir',
         help='Send an IR signal.'
-        )
+    )
     parser_sendir.add_argument(
         '-c', '--command',
         help='Named command to send from file in filename',
@@ -357,7 +353,7 @@ def parse_commandline():
         dest='filename', type=str, default=None
     )
     parser_sendir.add_argument(
-        '--count',
+        '--count', '-#',
         help='Number of times to send command',
         dest='count', type=int, default=1
     )
@@ -366,22 +362,29 @@ def parse_commandline():
         help='Numbers making up a pronto hex ir signal',
         nargs='*'
     )
+    parser_getinput = subparsers.add_parser(
+        'getinput',
+        help='Get a digital input (not yet implemented).'
+    )
     parser_serial = subparsers.add_parser(
         'serial',
         help='Send a string to a serial port, get the response.'
-        )
+    )
     parser_serial.add_argument(
         'message',
         help='String to send to the serial port',
-        nargs='*', type=str
-        )
+        type=str
+    )
     parser_relay = subparsers.add_parser(
         'relay',
         help='Set or clear a relay.'
-        )
-    parser_relay.add_argument('onoff',
-            help='Value to set the relay to',
-            nargs=1, type=str, default='pulse')
+    )
+    parser_relay.add_argument(
+        'onoff',
+        help='Value to set the relay to',
+        choices=['on', 'off', 'toggle', 'pulse', '?'],
+        type=str
+    )
     parser_version = subparsers.add_parser(
         'version',
         help='Inquire version of the GlobalCache. '
@@ -395,21 +398,25 @@ def parse_commandline():
     return parser.parse_args()
 
 def main():
-    logging.basicConfig(level=logging.INFO)
-    args = parse_commandline()
 
-    if (args.version):
+    args = parse_commandline()
+    logging.basicConfig(level=getattr(logging, args.loglevel))
+    if args.version:
         print(VERSION)
         sys.exit(0)
 
-    status = False
-    try:
-        globalcache = GlobalCache(args.ip, args.tcpport, args.timeout)
-    except IOError:
-        print('Could not open GlobalCache')
+    if args.subcommand == None:
+        print("No subcommand specified. Use '--help' for help.")
         sys.exit(2)
 
-    if (args.subcommand == 'version'):
+    status = True
+    try:
+        globalcache = GlobalCache(args.ip, args.tcpport, args.timeout, args.immediate_close)
+    except IOError:
+        print('Could not open GlobalCache')
+        sys.exit(3)
+
+    if args.subcommand == 'version':
         print(globalcache.getversion())
         status = True
     elif args.subcommand == 'sendir':
@@ -426,25 +433,35 @@ def main():
             status = globalcache.sendir(args.module, args.port, cmd, args.count)
     elif args.subcommand == 'relay':
         device = GCRelayDevice(globalcache, args.module, args.port)
-        if args.onoff in ['on', '1', 'set']:
+        if args.onoff == 'on':
             status = device.turn_on()
-        elif args.onoff in ['off', '0', 'clear']:
+        elif args.onoff == 'off':
             status = device.turn_off()
-        else:
+        elif args.onoff == 'pulse':
             status = device.pulse()
+        elif args.onoff == 'toggle':
+            status = device.toggle()
+        state = device.getstate()
+        print("The relay is now " + ("on" if state else "off"))
     elif args.subcommand == 'getserial':
-        answer = globalcache.getserial(args.module, args.port)
+        answer = globalcache.getserial(args.module)
         print(answer)
-        success = answer != None
+        status = answer != None
     elif args.subcommand == 'serial':
-        print('Not implemented yet')
+        serial_device = GCSerialDevice(globalcache, args.module)
+        answer = serial_device.send(args.message)[0]
+        print(answer)
+        status = answer != None
+    elif args.subcommand == 'getinput':
+        print('Not yet implemented')
+        status = False
     else:
         print('Unknown or missing subcommand, use --help for syntax.')
 
+    globalcache.close()
     if (not status):
         print('Failure')
 
-    #print("Success" if status else "Failure")
     sys.exit(0 if status else 1)
 
 if __name__ == "__main__":

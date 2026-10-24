@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# This is an example file using the pyglobalcache API.
+# The commands sent are meaningful for me; they may not meaningful for others ;-).
 
 import logging
 import pyglobalcache
@@ -15,8 +17,6 @@ try:
     status = tv.send("ok", 3)
     print(status)
     gc.close()
-#    answ = gc.getserial()
-#    print(answ)
 
 except Exception as ex:
     print('Some error occured', ex)
@@ -72,7 +72,9 @@ door = gc2.RelayDevice()
 status = door.pulse()
 print(status)
 relay = gc2.RelayDevice(3, 2)
-print(relay.getstate())
+state = relay.getstate()
+print("Switch 2 is now " + ("on" if state else "off"))
 print(relay.toggle())
-print(relay.getstate())
+state = relay.getstate()
+print("Switch 2 is now " + ("on" if state else "off"))
 gc2.close()
