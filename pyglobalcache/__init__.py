@@ -324,6 +324,7 @@ def parse_commandline():
         dest='timeout', type=float, default=DEFAULT_TIMEOUT)
     parser.add_argument(
         '-I', '--immediate_close',
+        help='Close the GlobalCache immediately after every interaction',
         dest='immediate_close', action='store_true'
     )
     parser.add_argument(
@@ -359,7 +360,7 @@ def parse_commandline():
     )
     parser_sendir.add_argument(
         'pronto_hex_numbers',
-        help='Numbers making up a pronto hex ir signal',
+        help='Numbers making up a pronto hex ir signal, or "-" for reading from stdin',
         nargs='*'
     )
     parser_getinput = subparsers.add_parser(
@@ -429,6 +430,8 @@ def main():
                 print('Command "' + args.commandname + '" unknown.')
         else:
             pronto_hex = " ".join(args.pronto_hex_numbers)
+            if pronto_hex == '-':
+                pronto_hex = " ".join(sys.stdin.readlines())
             cmd = GCIRDevice.Command(pronto_hex)
             status = globalcache.sendir(args.module, args.port, cmd, args.count)
     elif args.subcommand == 'relay':
