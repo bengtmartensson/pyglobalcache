@@ -15,7 +15,7 @@ import time
 import typing
 import threading
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 DEFAULT_GLOBALCACHE_IP = '192.168.1.70'
 DEFAULT_GLOBALCACHE_CONTROLPORT = 4998 # No way to change in GlobalCache products
@@ -290,7 +290,7 @@ class GCRelayDevice(object):
 
 def parse_commandline():
     parser = argparse.ArgumentParser(
-        prog='globalcache',
+        prog='pyglobalcache',
         description="Program to send IR codes, serial commands and relay commands to a GlobalCache."
     )
     parser.add_argument(
@@ -382,7 +382,7 @@ def parse_commandline():
     )
     parser_relay.add_argument(
         'onoff',
-        help='Value to set the relay to',
+        help='Value to set the relay to, ? to report current value',
         choices=['on', 'off', 'toggle', 'pulse', '?'],
         type=str
     )
@@ -453,7 +453,7 @@ def main():
     elif args.subcommand == 'serial':
         serial_device = GCSerialDevice(globalcache, args.module)
         answer = serial_device.send(args.message)[0]
-        print(answer)
+        print(answer.replace('\r', '\\r'))
         status = answer != None
     elif args.subcommand == 'getinput':
         print('Not yet implemented')
