@@ -1,0 +1,27 @@
+[project]
+name = "pyglobalcache"
+version = "0.3.0"
+authors = [
+  { name="Bengt Martensson", email="mail@bengt-martensson.de" },
+]
+description = "Simple Python API and command line program to access GlobalCaché hardware using its TCP socket interface."
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+keywords = ["globalcache", "infrared-control"]
+
+[project.urls]
+Homepage = "https://github.com/bengtmartensson/pyglobalcache"
+Issues   = "https://github.com/bengtmartensson/pyglobalcache/issues"
+
+[project.scripts]
+pyglobalcache = "pyglobalcache:main"
+
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
