@@ -3,7 +3,8 @@
 # Copyright (C) 2024, 2026 Bengt Martensson.
 
 """
-Control a GlobalCache device through its TCP API, all models (probably). Supports IR, serial and relay devices.
+Control a GlobalCache device through its TCP API, all models (probably).
+Supports IR, serial and relay devices.
 Contains a factory function: do not use the constructor.
 """
 
@@ -18,7 +19,7 @@ import threading
 VERSION = "0.3.0"
 
 DEFAULT_GLOBALCACHE_IP = '192.168.1.70'
-DEFAULT_GLOBALCACHE_CONTROLPORT = 4998 # No way to change in GlobalCache products
+DEFAULT_GLOBALCACHE_CONTROLPORT = 4998  # No way to change in GlobalCache products
 DEFAULT_TIMEOUT = 5
 DEFAULT_SERIAL_SETTINGS = '9600,FLOW_NONE,PARITY_NO'
 
@@ -32,9 +33,11 @@ GETSTATE   = 'getstate'
 
 logger = logging.getLogger(__name__)
 
+
 class GlobalCache(object):
 
     locks = {}
+
     def _get_lock(ip):
         lock = GlobalCache.locks.get(ip)
         if lock is not None:
@@ -62,7 +65,7 @@ class GlobalCache(object):
             self._sock.settimeout(self._timeout)
             self._sock.connect((self._ip, self._portnr))
 
-        def send_read(self, command: str, no_lines: str=1) -> typing.List[str]:
+        def send_read(self, command: str, no_lines: str = 1) -> typing.List[str]:
             logger.info('Sending "' + command + '" to ' + self._ip + ':' + str(self._portnr))
             if self._sock is None:
                 self._open()
@@ -81,7 +84,8 @@ class GlobalCache(object):
             logger.info('Response: "' + answer[0] + '"')
             return answer
 
-    def globalcache(ip_address: str = DEFAULT_GLOBALCACHE_IP, portnr: int = DEFAULT_GLOBALCACHE_CONTROLPORT, timeout: int = DEFAULT_TIMEOUT, immediate_close: bool = False) -> GlobalCache:
+    def globalcache(ip_address: str = DEFAULT_GLOBALCACHE_IP, portnr: int = DEFAULT_GLOBALCACHE_CONTROLPORT,
+                    timeout: int = DEFAULT_TIMEOUT, immediate_close: bool = False) -> GlobalCache:
         canon_ip = socket.gethostbyname(ip_address)
         gc = GlobalCache._globalcaches.get(canon_ip)
         if gc is None:
@@ -90,31 +94,32 @@ class GlobalCache(object):
         return gc
 
     # "private", do not use, use the factory instead
-    def __init__(self, ip_address: str = DEFAULT_GLOBALCACHE_IP, portnr: int = DEFAULT_GLOBALCACHE_CONTROLPORT, timeout: int = DEFAULT_TIMEOUT, immediate_close: bool = True) -> None:
-        self._ip = ip_address # socket.gethostbyname(ip_address)
+    def __init__(self, ip_address: str = DEFAULT_GLOBALCACHE_IP, portnr: int = DEFAULT_GLOBALCACHE_CONTROLPORT,
+                 timeout: int = DEFAULT_TIMEOUT, immediate_close: bool = True) -> None:
+        self._ip = ip_address
         self._portnr = portnr
         self._sequence_no = 1
         self._timeout = timeout
-        self._lock = threading.Lock() # GlobalCache._get_lock(self._ip)
+        self._lock = threading.Lock()
         self._immediate_close = immediate_close
         self._smartsock = GlobalCache.SmartSocket(self._ip, portnr, self._timeout, self._immediate_close)
         self._version = self._sendstring(GETVERSION, 1)[0]
 
     def IRDevice(self, module: int, port: int = 1, commands: typing.Dict[str, str] = {}) -> GCIRDevice:
         return GCIRDevice(self, module, port, commands)
-    
-    def RelayDevice(self, module: int=3, port: int=1) -> GCRelayDevice:
+
+    def RelayDevice(self, module: int = 3, port: int = 1) -> GCRelayDevice:
         return GCRelayDevice(self, module, port)
 
-    def SerialDevice(self, module: int=1, timeout: int = DEFAULT_TIMEOUT) -> GCSerialDevice:
+    def SerialDevice(self, module: int = 1, timeout: int = DEFAULT_TIMEOUT) -> GCSerialDevice:
         return GCSerialDevice(self, module, timeout)
-        
+
     def ready(self, timeout: int) -> bool:
-        return self._version != None
+        return self._version is not None
 
     def close(self) -> None:
         self._smartsock.close()
-    
+
     def getversion(self) -> str:
         return self._version
 
@@ -129,19 +134,20 @@ class GlobalCache(object):
         expected = COMPLETEIR + ',' + list[1] + ',' + list[2]
         return expected == answ
 
-    def _sendstring(self, command: str, no_lines: int=1) -> typing.List[str]:
+    def _sendstring(self, command: str, no_lines: int = 1) -> typing.List[str]:
         with self._lock:
             answ = self._smartsock.send_read(command, no_lines)
         return answ
-    
+
     def _connector(self, module: int, port: int = 1) -> str:
         return str(module) + ':' + str(port)
 
     def _moduleversion(self, module: int) -> str:
         return GETVERSION + "," + str(module)
-        
+
     def _ir_string(self, module: int, port: int, command: str, count: int) -> str:
-        return SENDIR + ',' + self._connector(module, port) + ',' + str(self._sequence_no) + ',' + str(command._frequency) + ',' + str(count) + command._datastring
+        return (SENDIR + ',' + self._connector(module, port) + ',' + str(self._sequence_no)
+                + ',' + str(command._frequency) + ',' + str(count) + command._datastring)
 
     def setrelay(self, module: int, port: int, onoff: bool) -> bool:
         cmdstring = self._relay_set_string(module, port, onoff)
@@ -159,14 +165,14 @@ class GlobalCache(object):
 
     def _relay_get_string(self, module: int, port: int) -> str:
         return GETSTATE + ',' + self._connector(module, port)
-    
-    def getserial(self, module: int=1) -> str:
+
+    def getserial(self, module: int = 1) -> str:
         cmdstring = GETSERIAL + ',' + self._connector(module)
         return self._sendstring(cmdstring)[0]
 
     # settings is a string of the form
     # <baudrate>,<flowcontrol/duplex>,<parity>[,stopbits][,cable_id]
-    def setserial(self, module: int=1, settings: str=DEFAULT_SERIAL_SETTINGS) -> str:
+    def setserial(self, module: int = 1, settings: str = DEFAULT_SERIAL_SETTINGS) -> str:
         cmdstring = SETSERIAL + ',' + self._connector(module) + ',' + settings
         return self._sendstring(cmdstring)[0]
 
@@ -177,16 +183,18 @@ class GlobalCache(object):
         cmd = self._moduleversion(module)
         return self._sendstring(cmd)
 
+
 class GCSerialDevice(object):
-    def __init__(self, globalCache, module:int = 1, port:int = 1, timeout=DEFAULT_TIMEOUT):
+    def __init__(self, globalCache, module: int = 1, port: int = 1, timeout=DEFAULT_TIMEOUT):
         self._globalCache = globalCache
         self._module = module
         self._port = port
         self._timeout = timeout
         self._socketno = globalCache._portnr + module
-        self._smartsocket = GlobalCache.SmartSocket(self._globalCache._ip, self._socketno, timeout, self._globalCache._immediate_close)
+        self._smartsocket = GlobalCache.SmartSocket(self._globalCache._ip, self._socketno,
+                                                    timeout, self._globalCache._immediate_close)
 
-    def send(self, command: str, no_lines: str=1) -> typing.List[str]:
+    def send(self, command: str, no_lines: int = 1) -> typing.List[str]:
         with self._globalCache._lock:
             answ = self._smartsocket.send_read(command, no_lines)
         return answ
@@ -200,13 +208,14 @@ class GCSerialDevice(object):
     def getversion(self) -> str:
         return self._globalCache.getmoduleversion(self._module)
 
-class GCIRDevice(object):         
+
+class GCIRDevice(object):
     def __init__(self, globalCache, module, port, commands):
         self._commands = commands if isinstance(commands, dict) else self.parse_commands_file(commands)
         self._globalCache = globalCache
         self._module = module
         self._port = port
-    
+
     def send(self, command_name: str, count: int = 1) -> bool:
         command = self._commands[command_name]
         return self._globalCache.sendir(self._module, self._port, command, count)
@@ -216,20 +225,20 @@ class GCIRDevice(object):
 
     def parse_commands_file(self, filename: str) -> typing.Dict[str, str]:
         commands = {}
-        with open(filename,'r') as cmds:  
+        with open(filename, 'r') as cmds:
             name = None
             for line in cmds:
-                l = line.rstrip()
-                if l == '':
+                lin = line.rstrip()
+                if lin == '':
                     continue
 
-                if name == None:
-                    name = l
+                if name is None:
+                    name = lin
                 else:
-                    commands[name] = self.Command(l)
+                    commands[name] = self.Command(lin)
                     name = None
         return commands
-    
+
     class Command(object):
         def __init__(self, prontohex: str) -> None:
             list = prontohex.split()
@@ -240,7 +249,7 @@ class GCIRDevice(object):
             self._frequency = int(1000000.0 / (0.241246 * fcode))
             no_intro_pair = self._pronto_int(list)
             no_reps_pair = self._pronto_int(list)
-            self._datastring = "," + str(2*no_intro_pair + 1)
+            self._datastring = "," + str(2 * no_intro_pair + 1)
             for duration in list:
                 self._datastring += ("," + str(int(duration, 16)))
 
@@ -256,13 +265,14 @@ class GCIRDevice(object):
         """"This exception is thrown when a command is not found."""
         pass
 
+
 class GCRelayDevice(object):
-    def __init__(self, globalCache: GlobalCache, module: int=3, port: int=1, pulselength: int=1) -> None:
+    def __init__(self, globalCache: GlobalCache, module: int = 3, port: int = 1, pulselength: int = 1) -> None:
         self._globalCache = globalCache
         self._module = module
         self._port = port
         self._pulselength = pulselength
-    
+
     def setstate(self, onoff: bool) -> bool:
         return self._globalCache.setrelay(self._module, self._port, onoff)
 
@@ -274,7 +284,7 @@ class GCRelayDevice(object):
 
     def toggle(self) -> bool:
         return self.setstate(not self.getstate())
-    
+
     def getstate(self) -> bool:
         return self._globalCache.getrelay(self._module, self._port)
 
@@ -287,6 +297,7 @@ class GCRelayDevice(object):
 
     def getversion(self) -> str:
         return self._globalCache.getmoduleversion(self._module)
+
 
 def parse_commandline():
     parser = argparse.ArgumentParser(
@@ -335,7 +346,7 @@ def parse_commandline():
         '-v', '--verbose',
         help='Have the communication with the GlobalCache echoed',
         dest='verbose', action='store_true')
- 
+
     subparsers = \
         parser.add_subparsers(dest='subcommand', metavar='command')
 
@@ -388,15 +399,15 @@ def parse_commandline():
     )
     parser_version = subparsers.add_parser(
         'version',
-        help='Inquire version of the GlobalCache. '
-        + ' (Use "--version" for the version of this program.)'
-        )
+        help='Inquire version of the GlobalCache. (Use "--version" for the version of this program.)'
+    )
     parser_getserial = subparsers.add_parser(
         'getserial',
         help='Inquire current serial parameters. '
-        )
+    )
 
     return parser.parse_args()
+
 
 def main():
 
@@ -406,7 +417,7 @@ def main():
         print(VERSION)
         sys.exit(0)
 
-    if args.subcommand == None:
+    if args.subcommand is None:
         print("No subcommand specified. Use '--help' for help.")
         sys.exit(2)
 
@@ -422,7 +433,7 @@ def main():
         status = True
     elif args.subcommand == 'sendir':
         status = False
-        if (args.filename != None and args.commandname != None):
+        if (args.filename is not None and args.commandname is not None):
             device = GCIRDevice(globalcache, args.module, args.port, args.filename)
             try:
                 status = device.send(args.commandname, args.count)
@@ -449,12 +460,12 @@ def main():
     elif args.subcommand == 'getserial':
         answer = globalcache.getserial(args.module)
         print(answer)
-        status = answer != None
+        status = answer is not None
     elif args.subcommand == 'serial':
         serial_device = GCSerialDevice(globalcache, args.module)
         answer = serial_device.send(args.message)[0]
         print(answer.replace('\r', '\\r'))
-        status = answer != None
+        status = answer is not None
     elif args.subcommand == 'getinput':
         print('Not yet implemented')
         status = False
@@ -466,6 +477,7 @@ def main():
         print('Failure')
 
     sys.exit(0 if status else 1)
+
 
 if __name__ == "__main__":
     main()
